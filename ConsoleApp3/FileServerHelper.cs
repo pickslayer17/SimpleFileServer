@@ -26,25 +26,30 @@ public sealed class FileServer : IAsyncDisposable
     private const char Space = ' ';
     private const int RequestBufferSize = 4096;
     private const int PathStartIndex = 4;
-
-    private readonly string _folder;
+   
     private readonly CancellationTokenSource _cts = new();
 
+    private string _folder;
     private TcpListener _listener = null!;
     private string _faviconPath = null!;
     private Task _runTask = Task.CompletedTask;
-    private int _port;
 
-    public string Url => ServerUrlPrefix + _port + ServerUrlSuffix;
+    public int Port { get; private set; }
+    public string Url => ServerUrlPrefix + Port + ServerUrlSuffix;
 
-    private FileServer(string folder)
+    private FileServer(string folder) : this(folder, 0)
+    {
+    }
+
+    private FileServer(string folder, int port)
     {
         _folder = folder;
         _faviconPath = Path.Combine(_folder, FaviconFileName);
-        File.WriteAllBytesAsync(_faviconPath, []).Wait();
-        _listener = new TcpListener(IPAddress.Loopback, 0);
+        File.WriteAllBytes(_faviconPath, []);
+        _listener = new TcpListener(IPAddress.Loopback, port);
         _listener.Start();
-        _port = ((IPEndPoint)_listener.LocalEndpoint).Port;
+
+        Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
     }
 
     public static FileServer Start(string folder)
@@ -53,6 +58,19 @@ public sealed class FileServer : IAsyncDisposable
         fileServer.Run();
 
         return fileServer;
+    }
+
+    public static FileServer Start(string folder, int port)
+    {
+        var fileServer = new FileServer(folder, port);
+        fileServer.Run();
+
+        return fileServer;
+    }
+
+    public void ChangeFolder(string folder)
+    {
+        _folder = folder;
     }
 
     private void Run()
