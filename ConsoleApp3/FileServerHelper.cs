@@ -26,13 +26,14 @@ public sealed class FileServer : IAsyncDisposable
     private const char Space = ' ';
     private const int RequestBufferSize = 4096;
     private const int PathStartIndex = 4;
-   
+
     private readonly CancellationTokenSource _cts = new();
 
     private string _folder;
     private TcpListener _listener = null!;
-    private string _faviconPath = null!;
+    private HashSet<string> _faviconPathes = new();
     private Task _runTask = Task.CompletedTask;
+    private TaskCompletionSource _started = new();
 
     public int Port { get; private set; }
     public string Url => ServerUrlPrefix + Port + ServerUrlSuffix;
@@ -44,26 +45,27 @@ public sealed class FileServer : IAsyncDisposable
     private FileServer(string folder, int port)
     {
         _folder = folder;
-        _faviconPath = Path.Combine(_folder, FaviconFileName);
-        File.WriteAllBytes(_faviconPath, []);
+        AddFavIcon(_folder);
         _listener = new TcpListener(IPAddress.Loopback, port);
         _listener.Start();
 
         Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
     }
 
-    public static FileServer Start(string folder)
+    public static async Task<FileServer> StartAsync(string folder)
     {
         var fileServer = new FileServer(folder);
         fileServer.Run();
+        await fileServer._started.Task;
 
         return fileServer;
     }
 
-    public static FileServer Start(string folder, int port)
+    public static async Task<FileServer> StartAsync(string folder, int port)
     {
         var fileServer = new FileServer(folder, port);
         fileServer.Run();
+        await fileServer._started.Task;
 
         return fileServer;
     }
@@ -83,7 +85,10 @@ public sealed class FileServer : IAsyncDisposable
         _cts.Cancel();
         _listener.Stop();
         await _runTask;
-        File.Delete(_faviconPath);
+        foreach (var faviconPath in _faviconPathes)
+        {
+            File.Delete(faviconPath);
+        }
         _cts.Dispose();
     }
 
@@ -92,8 +97,16 @@ public sealed class FileServer : IAsyncDisposable
         await StopAsync();
     }
 
+    private void AddFavIcon(string folder)
+    {
+        var faviconPath = Path.Combine(folder, FaviconFileName);
+        if (_faviconPathes.Add(faviconPath))
+            File.WriteAllBytes(faviconPath, []);
+    }
+
     private async Task RunInternalAsync()
     {
+        _started.TrySetResult();
         while (!_cts.IsCancellationRequested)
         {
             try
