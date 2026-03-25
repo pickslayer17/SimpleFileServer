@@ -7,6 +7,8 @@ namespace ConsoleApp3;
 
 public sealed class FileServer : IAsyncDisposable
 {
+    private const int ClientReceiveTimeout = 5000;
+    private const int ClientSendTimeout = 5000;
     private const string FaviconFileName = "favicon.ico";
     private const string ServerUrlPrefix = "http://127.0.0.1:";
     private const string ServerUrlSuffix = "/";
@@ -73,6 +75,7 @@ public sealed class FileServer : IAsyncDisposable
     public void ChangeFolder(string folder)
     {
         _folder = folder;
+        AddFavIcon(_folder);
     }
 
     private void Run()
@@ -111,18 +114,35 @@ public sealed class FileServer : IAsyncDisposable
         {
             try
             {
-                using var client = await _listener.AcceptTcpClientAsync(_cts.Token);
-                using var stream = client.GetStream();
-
-                string path = await ReadPathAsync(stream);
-                byte[] response = BuildResponse(path);
-
-                await stream.WriteAsync(response, _cts.Token);
+                var client = await _listener.AcceptTcpClientAsync(_cts.Token);
+                _ = Task.Run(() => HandleClientAsync(client));
             }
             catch (OperationCanceledException)
             {
                 break;
             }
+        }
+    }
+
+    private async Task HandleClientAsync(TcpClient client)
+    {
+        try
+        {
+            using (client)
+            {
+                client.ReceiveTimeout = ClientReceiveTimeout;
+                client.SendTimeout = ClientSendTimeout;
+
+                using (var stream = client.GetStream())
+                {
+                    string path = await ReadPathAsync(stream);
+                    byte[] response = BuildResponse(path);
+                    await stream.WriteAsync(response, _cts.Token);
+                }
+            }
+        }
+        catch
+        {
         }
     }
 
